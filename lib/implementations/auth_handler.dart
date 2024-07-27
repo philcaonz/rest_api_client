@@ -9,6 +9,7 @@ import 'package:rest_api_client/options/auth_options.dart';
 import 'package:rest_api_client/options/exception_options.dart';
 import 'package:rest_api_client/options/logging_options.dart';
 import 'package:rest_api_client/options/rest_api_client_options.dart';
+import 'package:rest_api_client/options/rest_api_client_request_options.dart';
 import 'package:storage_repository/storage_repository.dart';
 
 class AuthHandler {
@@ -65,6 +66,51 @@ class AuthHandler {
     final currentJwt = await jwt;
     if (currentJwt != null && currentJwt.isNotEmpty)
       _setJwtToHeader(currentJwt);
+  }
+
+  /// Refreshes the token by calling specified refresh-token endpoint
+  Future<void> authenticate(
+      {data, RestApiClientRequestOptions? reqOptions}) async {
+    final newDioClient = Dio(BaseOptions()
+      ..baseUrl = authOptions.baseUrl ?? options.baseUrl
+      ..contentType = Headers.jsonContentType);
+
+    if (loggingOptions.logNetworkTraffic) {
+      newDioClient.interceptors.add(
+        PrettyDioLogger(
+          responseBody: loggingOptions.responseBody,
+          requestBody: loggingOptions.requestBody,
+          requestHeader: loggingOptions.requestHeader,
+          request: loggingOptions.request,
+          responseHeader: loggingOptions.responseHeader,
+          compact: loggingOptions.compact,
+          error: loggingOptions.error,
+        ),
+      );
+    }
+
+    if (options.overrideBadCertificate && !kIsWeb) {
+      (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+        final client = HttpClient();
+
+        client.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+
+        return client;
+      };
+    }
+
+    final response = await newDioClient.post(
+      authOptions.authenticationEndpoint,
+      data: data,
+      queryParameters: authOptions.authenticationEndpointQueryParams,
+      options: reqOptions?.toOptions(),
+    );
+
+    final resolvedJwt = authOptions.resolveJwt!(response);
+    final resolvedRefreshToken = authOptions.resolveRefreshToken!(response);
+
+    await authorize(jwt: resolvedJwt, refreshToken: resolvedRefreshToken);
   }
 
   Future<bool> authorize(
@@ -172,6 +218,7 @@ class AuthHandler {
 
     final response = await newDioClient.post(
       authOptions.refreshTokenEndpoint,
+      queryParameters: authOptions.refreshTokenEndpointQueryParams,
       options: Options(
         headers: authOptions.refreshTokenHeadersBuilder
                 ?.call(currentJwt ?? '', currentRefreshToken ?? '') ??

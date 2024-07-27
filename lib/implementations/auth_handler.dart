@@ -139,7 +139,7 @@ class AuthHandler {
   /// Refreshes the token by calling specified refresh-token endpoint
   Future<void> executeTokenRefresh() async {
     final newDioClient = Dio(BaseOptions()
-      ..baseUrl = options.baseUrl
+      ..baseUrl = authOptions.baseUrl ?? options.baseUrl
       ..contentType = Headers.jsonContentType);
 
     if (loggingOptions.logNetworkTraffic) {
